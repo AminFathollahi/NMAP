@@ -29,8 +29,8 @@ if 'MUJOCO_GL' not in os.environ:
 _SWIM_SPEED = 0.15      # lowered target speed to give higher velocity rewards
 _CRAWL_SPEED = 0.08     # slightly higher crawl speed target
 
-# --- Improved Mixed Environment Task ---
-class ImprovedMixedEnvironmentSwim(swimmer.Swimmer):
+# --- Mixed Environment Task ---
+class MixedEnvironmentSwim(swimmer.Swimmer):
     """Task with mixed water and land zones for real-time adaptation."""
     
     def __init__(self, desired_speed=_SWIM_SPEED, **kwargs):
@@ -90,6 +90,7 @@ class ImprovedMixedEnvironmentSwim(swimmer.Swimmer):
         self.position_history = []
         self.env_history = []
         self.action_history = []
+        self._land_reached = False
         
     def get_current_environment(self, physics):
         """Detect current environment based on swimmer position."""
@@ -190,16 +191,25 @@ class ImprovedMixedEnvironmentSwim(swimmer.Swimmer):
         # Determine current medium first
         current_env = self.get_current_environment(physics)
 
-        # Primary reward: forward velocity (positive along +x direction)
-        # Positive x-direction is forward for the swimmer model.
-        forward_velocity = physics.named.data.sensordata['head_vel'][0]
+        # Primary reward: velocity projected toward the nearest target (land-zone center).
+        head_pos = np.asarray(physics.named.data.xpos['head', :2], dtype=np.float64)
+        head_vel_xy = np.asarray(physics.named.data.sensordata['head_vel'][:2], dtype=np.float64)
+        target_speeds = []
+        for zone in self.land_zones:
+            target_vec = np.asarray(zone['center'], dtype=np.float64) - head_pos
+            norm = np.linalg.norm(target_vec)
+            if norm < 1e-8:
+                continue
+            target_dir = target_vec / norm
+            target_speeds.append(float(np.dot(head_vel_xy, target_dir)))
+        target_velocity = max(target_speeds) if target_speeds else float(head_vel_xy[0])
 
         # Use different speed targets depending on medium
         target_speed = _SWIM_SPEED if current_env == EnvironmentType.WATER else _CRAWL_SPEED
 
-        # Stronger weight and lower target speed make forward progress more lucrative
-        reward = 3.0 * rewards.tolerance(
-            forward_velocity,
+        # Increase target-directed locomotion weighting to avoid stationary local optima.
+        reward = 4.5 * rewards.tolerance(
+            target_velocity,
             bounds=(target_speed, float('inf')),
             margin=target_speed,
             value_at_margin=0.,
@@ -212,8 +222,8 @@ class ImprovedMixedEnvironmentSwim(swimmer.Swimmer):
         # distinguishes real forward swimming from the zero-mean "shivering"
         # that the primary tolerance reward cannot fully prevent.
         # ----------------------------------------------------------------
-        if forward_velocity > 0.05:
-            reward += 0.8 * forward_velocity
+        if target_velocity > 0.05:
+            reward += 1.0 * target_velocity
 
         # ----------------------------------------------------------------
         # ANTI-TWITCHING: joint-velocity (activity) penalty
@@ -225,6 +235,19 @@ class ImprovedMixedEnvironmentSwim(swimmer.Swimmer):
         reward -= activity_penalty * 0.002
 
         # ----------------------------------------------------------------
+        # POSTURE PENALTY (anti-curling):
+        # Light penalty for extreme joint angles that remain static.
+        # ----------------------------------------------------------------
+        n_joints = int(np.size(physics.data.ctrl))
+        if n_joints > 0:
+            joint_angles = np.asarray(physics.data.qpos[-n_joints:], dtype=np.float64)
+            joint_speeds = np.asarray(physics.data.qvel[-n_joints:], dtype=np.float64)
+            extreme_angles = np.maximum(0.0, np.abs(joint_angles) - 1.0)
+            static_mask = (np.abs(joint_speeds) < 0.03).astype(np.float64)
+            posture_penalty = float(np.mean(extreme_angles * static_mask))
+            reward -= 0.03 * posture_penalty
+
+        # ----------------------------------------------------------------
         # ANTI-TWITCHING: torque penalties
         # Two-tier torque penalty:
         #   1. A general soft penalty for all torque (scaled by viscosity).
@@ -234,14 +257,14 @@ class ImprovedMixedEnvironmentSwim(swimmer.Swimmer):
         # ----------------------------------------------------------------
         ctrl = physics.data.ctrl
 
-        # Soft penalty on total torque (increased from 0.0001 → 0.001)
+        # Soft penalty on total torque (reduced so policy is not over-penalized for actuation)
         torque_penalty = np.sum(np.square(ctrl))
         vis_scale = min(self.current_viscosity / 0.3, 1.0)  # 0..1
-        reward -= torque_penalty * 0.001 * vis_scale
+        reward -= torque_penalty * 0.0006 * vis_scale
 
-        # Hard penalty on torques exceeding 0.8 (encourages fluid, low-amplitude waves)
+        # Hard penalty on torques exceeding 0.8.
         excessive_torque = np.sum(np.maximum(0.0, np.abs(ctrl) - 0.8) ** 2)
-        reward -= excessive_torque * 0.05
+        reward -= excessive_torque * 0.03
 
         # Small constant incentive to keep moving (helps exploration).
         reward += 0.01
@@ -253,7 +276,6 @@ class ImprovedMixedEnvironmentSwim(swimmer.Swimmer):
             reward += 0.3
 
         # Distance-based shaping every 0.5 m from initial position
-        head_pos = physics.named.data.xpos['head', :2]
         dist_from_start = np.linalg.norm(head_pos - self._initial_position)
         reward += 0.1 * (dist_from_start // 0.5)
 
@@ -267,30 +289,30 @@ class ImprovedMixedEnvironmentSwim(swimmer.Swimmer):
 
         return reward
 
-# --- Register improved mixed environment task ---
-if not hasattr(swimmer, 'improved_mixed_env_registered'):
+# --- Register mixed environment task ---
+if not hasattr(swimmer, 'mixed_env_registered'):
     @swimmer.SUITE.add()
-    def improved_mixed_environment(
+    def mixed_environment(
         n_links=6,
         desired_speed=_SWIM_SPEED,
         time_limit=3000,
         random=None,
     ):
-        """Returns the improved mixed environment swim task."""
+        """Returns the mixed environment swim task."""
         model_string, assets = swimmer.get_model_and_assets(n_links)
         physics = swimmer.Physics.from_xml_string(model_string, assets=assets)
-        task = ImprovedMixedEnvironmentSwim(desired_speed=desired_speed, random=random)
+        task = MixedEnvironmentSwim(desired_speed=desired_speed, random=random)
         return control.Environment(physics, task, time_limit=time_limit, n_sub_steps=4)
     
-    swimmer.improved_mixed_env_registered = True
+    swimmer.mixed_env_registered = True
 
 # --- Environment Wrapper Class ---
-class ImprovedMixedSwimmerEnv:
-    """Wrapper class for the improved mixed environment swimmer."""
+class MixedSwimmerEnv:
+    """Wrapper class for the mixed environment swimmer."""
     
     def __init__(self, n_links=6, desired_speed=_SWIM_SPEED, time_limit=3000, speed_factor=1.0):
         # Create base environment
-        self.env = suite.load('swimmer', 'improved_mixed_environment', 
+        self.env = suite.load('swimmer', 'mixed_environment', 
                              task_kwargs={'random': 1, 'n_links': n_links})
         # Accelerate simulation by scaling MuJoCo timestep (bigger timestep = faster simulated time)
         if speed_factor != 1.0:
@@ -324,18 +346,18 @@ class ImprovedMixedSwimmerEnv:
         pass
 
 # --- Test Function ---
-def test_improved_mixed_environment(n_links=6, oscillator_period=60, amplitude=8.0, trained_model_path=None):
-    """Test improved mixed environment with square wave oscillators or trained model."""
+def test_mixed_environment(n_links=6, oscillator_period=60, amplitude=8.0, trained_model_path=None):
+    """Test mixed environment with square wave oscillators or trained model."""
     import torch
     import numpy as np
     import os
     import time
     import imageio
     
-    print("=== TESTING IMPROVED MIXED ENVIRONMENT ===")
+    print("=== TESTING MIXED ENVIRONMENT ===")
     
-    # Create improved mixed environment
-    env = suite.load('swimmer', 'improved_mixed_environment', task_kwargs={'random': 1, 'n_links': n_links})
+    # Create mixed environment
+    env = suite.load('swimmer', 'mixed_environment', task_kwargs={'random': 1, 'n_links': n_links})
     
     obs_spec = env.observation_spec()
     action_spec = env.action_spec()
@@ -403,7 +425,7 @@ def test_improved_mixed_environment(n_links=6, oscillator_period=60, amplitude=8
         actor = TrainedModelActor(agent, tonic_env)
         print("Using trained model for evaluation")
     else:
-        # Create improved adaptive swimmer with square wave oscillators
+        # Create adaptive swimmer with square wave oscillators
         ncap_module = NCAPSwimmer(n_joints=n_joints, oscillator_period=oscillator_period)
         ncap_module.base_amplitude = nn.Parameter(torch.tensor(amplitude))
         actor = NCAPSwimmerActor(ncap_module)
@@ -419,10 +441,10 @@ def test_improved_mixed_environment(n_links=6, oscillator_period=60, amplitude=8
     environment_history = []
     
     # Video generation
-    os.makedirs("outputs/improved_mixed_env", exist_ok=True)
-    video_filename = f"outputs/improved_mixed_env/improved_adaptation_{n_links}links.mp4"
-    plot_filename = f"outputs/improved_mixed_env/improved_environment_analysis_{n_links}links.png"
-    log_filename = f"outputs/improved_mixed_env/parameter_log_{n_links}links.txt"
+    os.makedirs("results/mixed_env", exist_ok=True)
+    video_filename = f"results/mixed_env/mixed_env_adaptation_{n_links}links.mp4"
+    plot_filename = f"results/mixed_env/mixed_env_analysis_{n_links}links.png"
+    log_filename = f"results/mixed_env/parameter_log_{n_links}links.txt"
     frame_count = 0
     max_frames = 1800  # 60 seconds at 30 fps (much longer training)
     frames = []
@@ -498,7 +520,7 @@ def test_improved_mixed_environment(n_links=6, oscillator_period=60, amplitude=8
     max_velocity = np.max(velocities) if velocities else 0.0
     avg_reward = np.mean(rewards_list) if rewards_list else 0.0
     
-    print(f"\n=== IMPROVED MIXED ENVIRONMENT PERFORMANCE METRICS ===")
+    print(f"\n=== MIXED ENVIRONMENT PERFORMANCE METRICS ===")
     print(f"Total distance traveled: {total_distance:.4f}")
     print(f"Average velocity: {avg_velocity:.4f}")
     print(f"Maximum velocity: {max_velocity:.4f}")

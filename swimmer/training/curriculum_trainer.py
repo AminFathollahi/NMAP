@@ -23,7 +23,7 @@ from ..utils.curriculum_visualization import create_curriculum_plots, create_tes
 from ..utils.artifact_naming import ArtifactNamer, detect_model_type
 
 try:
-    from NMAP_amin.ncap_priors.swimmer_priors import generate_ncap_segment_priors
+    from NMAP.connectome_priors.swimmer_priors import generate_ncap_segment_priors
 except Exception:
     generate_ncap_segment_priors = None
 
@@ -67,6 +67,7 @@ class CurriculumNCAPTrainer:
                  training_steps=1000000,
                  save_steps=50000,
                  log_episodes=50,
+                 log_dir='results/manual_run',
                  device='cuda' if torch.cuda.is_available() else 'cpu',
                  oscillator_period=60,
                  min_oscillator_strength=0.8,  # **REDUCED** from 1.2 to 0.8 for speed flexibility
@@ -85,6 +86,7 @@ class CurriculumNCAPTrainer:
         self.training_steps = training_steps
         self.save_steps = save_steps
         self.log_episodes = log_episodes
+        self.log_dir = os.path.abspath(log_dir)
         self.device = device
         self.oscillator_period = oscillator_period
         self.min_oscillator_strength = min_oscillator_strength
@@ -116,6 +118,14 @@ class CurriculumNCAPTrainer:
                 'training_mode': 'curriculum'
             }
         )
+
+        self.curriculum_output_root = os.path.join(self.log_dir, "curriculum_training")
+        self.curriculum_checkpoints_dir = os.path.join(self.curriculum_output_root, "checkpoints")
+        self.curriculum_plots_dir = os.path.join(self.curriculum_output_root, "plots")
+        self.curriculum_videos_dir = os.path.join(self.curriculum_output_root, "videos")
+        self.curriculum_models_dir = os.path.join(self.curriculum_output_root, "models")
+        self.curriculum_summaries_dir = os.path.join(self.curriculum_output_root, "summaries")
+        self.curriculum_logs_dir = os.path.join(self.curriculum_output_root, "logs")
         
         # Training state
         self.current_step = 0
@@ -124,7 +134,7 @@ class CurriculumNCAPTrainer:
         self.phase_distances = {0: [], 1: [], 2: [], 3: []}
         
         # Initialize components with advanced logging if available
-        log_dir = os.path.dirname(self.artifact_namer.training_log_dir())
+        log_dir = os.path.dirname(self.artifact_namer.training_log_dir(base_dir=self.curriculum_logs_dir))
         experiment_name = self.artifact_namer.base_id
         
         if ADVANCED_LOGGING_AVAILABLE:
@@ -603,7 +613,7 @@ class CurriculumNCAPTrainer:
         """Save training checkpoint with model-specific naming."""
         checkpoint_path = self.artifact_namer.checkpoint_name(
             step=step, 
-            base_dir="outputs/curriculum_training/checkpoints"
+            base_dir=self.curriculum_checkpoints_dir
         )
         
         checkpoint_data = {
@@ -976,7 +986,7 @@ class CurriculumNCAPTrainer:
                     plot_path = self.artifact_namer.analysis_plot_name(
                         "curriculum_progress", 
                         step=self.current_step,
-                        base_dir="outputs/curriculum_training/plots"
+                        base_dir=self.curriculum_plots_dir
                     )
                     create_curriculum_plots(
                         phase_rewards=self.phase_rewards,
@@ -992,7 +1002,7 @@ class CurriculumNCAPTrainer:
                     "trajectory_analysis", 
                     step=self.current_step,
                     phase=f"phase{current_phase}",
-                    base_dir="outputs/curriculum_training/plots"
+                    base_dir=self.curriculum_plots_dir
                 )
                 
                 trajectory_stats = create_trajectory_analysis(
@@ -1011,7 +1021,7 @@ class CurriculumNCAPTrainer:
                 video_path = self.artifact_namer.training_video_name(
                     step=self.current_step,
                     phase=f"phase{current_phase}",
-                    base_dir="outputs/curriculum_training/videos"
+                    base_dir=self.curriculum_videos_dir
                 )
                 create_test_video(
                     agent=agent,
@@ -1072,7 +1082,7 @@ class CurriculumNCAPTrainer:
         
         # Save final model
         final_path = self.artifact_namer.final_model_name(
-            base_dir="outputs/curriculum_training/models"
+            base_dir=self.curriculum_models_dir
         )
         torch.save({
             'model_state_dict': model.state_dict(),
@@ -1107,7 +1117,7 @@ class CurriculumNCAPTrainer:
             pbar.set_description("📊 Creating training plots")
             final_plot_path = self.artifact_namer.analysis_plot_name(
                 "curriculum_final", 
-                base_dir="outputs/curriculum_training/plots"
+                base_dir=self.curriculum_plots_dir
             )
             create_curriculum_plots(
                 phase_rewards=self.phase_rewards,
@@ -1133,7 +1143,7 @@ class CurriculumNCAPTrainer:
                 trajectory_path = self.artifact_namer.analysis_plot_name(
                     "final_trajectory", 
                     phase=f"phase{phase}",
-                    base_dir="outputs/curriculum_training/plots"
+                    base_dir=self.curriculum_plots_dir
                 )
                 stats = create_trajectory_analysis(
                     agent=agent,
@@ -1152,7 +1162,7 @@ class CurriculumNCAPTrainer:
             pbar.set_description("🎬 Creating phase comparison video")
             final_video_path = self.artifact_namer.evaluation_video_name(
                 evaluation_type="phase_comparison_final",
-                base_dir="outputs/curriculum_training/videos"
+                base_dir=self.curriculum_videos_dir
             )
             create_phase_comparison_video(
                 agent=agent,
@@ -1167,7 +1177,7 @@ class CurriculumNCAPTrainer:
             # Training summary
             pbar.set_description("📄 Generating training summary")
             summary_path = self.artifact_namer.experiment_summary_name(
-                base_dir="outputs/curriculum_training/summaries"
+                base_dir=self.curriculum_summaries_dir
             )
             save_training_summary(
                 eval_results=final_eval,
@@ -1258,7 +1268,7 @@ class CurriculumNCAPTrainer:
             vis_pbar.set_description("📊 Creating final training plots")
             eval_plot_path = self.artifact_namer.analysis_plot_name(
                 "evaluation_final", 
-                base_dir="outputs/curriculum_training/plots"
+                base_dir=self.curriculum_plots_dir
             )
             create_curriculum_plots(
                 phase_rewards=self.phase_rewards,
@@ -1284,7 +1294,7 @@ class CurriculumNCAPTrainer:
                 eval_trajectory_path = self.artifact_namer.analysis_plot_name(
                     "evaluation_trajectory", 
                     phase=f"phase{phase}",
-                    base_dir="outputs/curriculum_training/plots"
+                    base_dir=self.curriculum_plots_dir
                 )
                 trajectory_stats = create_trajectory_analysis(
                     agent=agent,
@@ -1303,7 +1313,7 @@ class CurriculumNCAPTrainer:
             vis_pbar.set_description("🎬 Creating phase comparison video")
             eval_comparison_video_path = self.artifact_namer.evaluation_video_name(
                 evaluation_type="phase_comparison",
-                base_dir="outputs/curriculum_training/videos"
+                base_dir=self.curriculum_videos_dir
             )
             create_phase_comparison_video(
                 agent=agent,
@@ -1326,7 +1336,7 @@ class CurriculumNCAPTrainer:
                 
                 phase_video_path = self.artifact_namer.evaluation_video_name(
                     evaluation_type=f"phase{phase}_{phase_names[phase].lower().replace(' ', '_')}",
-                    base_dir="outputs/curriculum_training/videos"
+                    base_dir=self.curriculum_videos_dir
                 )
                 create_test_video(
                     agent=agent,
@@ -1341,7 +1351,7 @@ class CurriculumNCAPTrainer:
             # Training summary
             vis_pbar.set_description("📄 Generating evaluation summary")
             eval_summary_path = self.artifact_namer.experiment_summary_name(
-                base_dir="outputs/curriculum_training/summaries"
+                base_dir=self.curriculum_summaries_dir
             ).replace("_experiment_summary.md", "_evaluation_summary.md")
             save_training_summary(
                 eval_results=final_eval,

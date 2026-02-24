@@ -8,7 +8,7 @@ import sys
 import os
 from swimmer.training import NCAPTrainer
 
-def test_improved_ncap_training():
+def test_base_ncap_training():
     """Test the improved NCAP training with stability measures."""
     print("=== TESTING IMPROVED NCAP TRAINING ===")
     
@@ -50,7 +50,7 @@ def test_stability_measures():
     trainer = NCAPTrainer(n_links=6)
     
     # Create a test model
-    model = trainer.create_improved_ncap_model(6)
+    model = trainer.create_base_ncap_model(6)
     tonic_model = trainer.create_tonic_ncap_model(6)
     
     # Test parameter monitoring
@@ -86,7 +86,7 @@ if __name__ == "__main__":
     
     if stability_ok:
         # Run training test
-        training_result = test_improved_ncap_training()
+        training_result = test_base_ncap_training()
         if training_result and training_result['success']:
             print("\n🎉 ALL TESTS PASSED! Improved training is working.")
         else:

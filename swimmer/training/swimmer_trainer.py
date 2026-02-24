@@ -7,9 +7,10 @@ Contains trainer classes for RL training of swimmer models.
 import torch
 import numpy as np
 import os
+from pathlib import Path
 import tonic
 import tonic.torch
-from ..environments.mixed_environment import ImprovedMixedSwimmerEnv
+from ..environments.mixed_environment import MixedSwimmerEnv
 from ..environments.tonic_wrapper import TonicSwimmerWrapper
 from ..models.ncap_swimmer import NCAPSwimmer
 from ..models.tonic_ncap import create_tonic_ncap_model
@@ -27,7 +28,8 @@ class SwimmerTrainer:
         n_links=6,
         training_steps=2000000,
         save_steps=100000,
-        output_dir='outputs/training',
+        output_dir=None,
+        log_dir='results/manual_run',
         log_episodes=10,
         action_scale=1.0,
         sparse_init: bool = False,
@@ -39,13 +41,19 @@ class SwimmerTrainer:
         self.n_links = n_links
         self.training_steps = training_steps
         self.save_steps = save_steps
-        self.output_dir = output_dir
         self.log_episodes = log_episodes
         self.sparse_init = bool(sparse_init)
         self.sparse_reg_lambda = float(sparse_reg_lambda)
         self.force_oscillation = bool(force_oscillation)
         self.prior_modulation_scale = 0.15 if self.sparse_init else 0.0
         self.effective_prior_lambda = self.sparse_reg_lambda
+
+        base_artifact_dir = Path(log_dir or output_dir or 'results/manual_run').resolve()
+        self.log_dir = str(base_artifact_dir)
+        self.output_dir = str(base_artifact_dir / "models")
+        self.training_log_dir = str(base_artifact_dir / "logs")
+        self.tonic_log_dir = str(base_artifact_dir / "tonic")
+        self.eval_output_dir = str(base_artifact_dir / "mixed_env")
 
         # Backward-compatible aliases for legacy helper methods.
         self.use_sparse_priors = self.sparse_init
@@ -57,8 +65,11 @@ class SwimmerTrainer:
         # `TonicSwimmerWrapper` in `create_tonic_environment`) can access it.
         self.action_scale = action_scale
         
-        # Create output directory
-        os.makedirs(output_dir, exist_ok=True)
+        # Create artifact directories
+        os.makedirs(self.output_dir, exist_ok=True)
+        os.makedirs(self.training_log_dir, exist_ok=True)
+        os.makedirs(self.tonic_log_dir, exist_ok=True)
+        os.makedirs(self.eval_output_dir, exist_ok=True)
         
         # Check for GPU
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -73,7 +84,7 @@ class SwimmerTrainer:
         # Initialize training logger
         experiment_name = f"{self.model_type}_{self.algorithm}_{self.n_links}links"
         self.logger = TrainingLogger(
-            log_dir='outputs/training_logs',
+            log_dir=self.training_log_dir,
             experiment_name=experiment_name
         )
 
@@ -83,13 +94,13 @@ class SwimmerTrainer:
             return None
         if self._sparse_prior_cache is not None:
             return self._sparse_prior_cache
-        from NMAP_amin.ncap_priors.swimmer_priors import generate_ncap_segment_priors
+        from NMAP.connectome_priors.swimmer_priors import generate_ncap_segment_priors
         self._sparse_prior_cache = generate_ncap_segment_priors(num_segments=int(max(1, num_segments)))
         return self._sparse_prior_cache
         
     def create_environment(self):
         """Create the training environment."""
-        return ImprovedMixedSwimmerEnv(n_links=self.n_links)
+        return MixedSwimmerEnv(n_links=self.n_links)
     
     def create_tonic_environment(self):
         """Create Tonic-compatible environment (no action scaling needed)."""
@@ -157,8 +168,7 @@ class SwimmerTrainer:
         
         # Set up Tonic logger with proper directory
         import tonic
-        log_dir = os.path.join('outputs', 'training_logs', f'{self.model_type}_{self.algorithm}_{self.n_links}links_tonic')
-        tonic.logger.initialize(path=log_dir)
+        tonic.logger.initialize(path=self.tonic_log_dir)
         
         # Log training configuration
         config = {
@@ -424,13 +434,13 @@ class SwimmerTrainer:
         print(f"Evaluating model in mixed environment for {max_frames} frames...")
         
         # Import the existing test function and modify it to use our trained model
-        from ..environments.mixed_environment import ImprovedMixedSwimmerEnv
+        from ..environments.mixed_environment import MixedSwimmerEnv
         from ..utils.visualization import create_comprehensive_visualization, create_parameter_log
         import imageio
         import time
         
         # Create mixed environment
-        env = ImprovedMixedSwimmerEnv(n_links=self.n_links, speed_factor=speed_factor)
+        env = MixedSwimmerEnv(n_links=self.n_links, speed_factor=speed_factor)
         physics = env.physics
         action_spec = env.action_spec
         n_joints = action_spec.shape[0]
@@ -444,10 +454,10 @@ class SwimmerTrainer:
         environment_history = []
         
         # Video generation
-        os.makedirs("outputs/improved_mixed_env", exist_ok=True)
-        video_filename = f"outputs/improved_mixed_env/trained_model_evaluation_{self.n_links}links.mp4"
-        plot_filename = f"outputs/improved_mixed_env/trained_model_analysis_{self.n_links}links.png"
-        log_filename = f"outputs/improved_mixed_env/trained_model_log_{self.n_links}links.txt"
+        os.makedirs(self.eval_output_dir, exist_ok=True)
+        video_filename = os.path.join(self.eval_output_dir, f"trained_model_evaluation_{self.n_links}links.mp4")
+        plot_filename = os.path.join(self.eval_output_dir, f"trained_model_analysis_{self.n_links}links.png")
+        log_filename = os.path.join(self.eval_output_dir, f"trained_model_log_{self.n_links}links.txt")
         
         frame_count = 0
         frames = []

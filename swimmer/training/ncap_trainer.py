@@ -9,7 +9,7 @@ import numpy as np
 import os
 import tonic
 import tonic.torch
-from ..environments.mixed_environment import ImprovedMixedSwimmerEnv
+from ..environments.mixed_environment import MixedSwimmerEnv
 from ..environments.tonic_wrapper import TonicSwimmerWrapper
 from ..models.ncap_swimmer import NCAPSwimmer
 from ..models.tonic_ncap import create_tonic_ncap_model
@@ -29,7 +29,8 @@ class NCAPTrainer(SwimmerTrainer):
         algorithm='a2c',
         training_steps=50000,
         save_steps=10000,
-        output_dir='outputs/training',
+        output_dir=None,
+        log_dir='results/manual_run',
         log_episodes=5,
         sparse_init: bool = False,
         sparse_reg_lambda: float = 0.0,
@@ -43,6 +44,7 @@ class NCAPTrainer(SwimmerTrainer):
             training_steps=training_steps,
             save_steps=save_steps,
             output_dir=output_dir,
+            log_dir=log_dir,
             log_episodes=log_episodes,
             sparse_init=sparse_init,
             sparse_reg_lambda=sparse_reg_lambda,
@@ -73,8 +75,8 @@ class NCAPTrainer(SwimmerTrainer):
             'visc_rewards': []   # corresponding rewards
         }
         
-    def create_improved_ncap_model(self, n_joints):
-        """Create NCAP model with improved initialization for training stability."""
+    def create_base_ncap_model(self, n_joints):
+        """Create NCAP model with stable initialization for training."""
         model = NCAPSwimmer(n_joints=n_joints, oscillator_period=60, memory_size=10)
         
         # Apply improved initialization
@@ -82,7 +84,7 @@ class NCAPTrainer(SwimmerTrainer):
         
         model.to(self.device)
         return model
-    
+
     def create_tonic_ncap_model(self, n_joints):
         """Create Tonic-compatible NCAP model with improved initialization."""
         self._prepare_sparse_priors(num_segments=n_joints)
@@ -269,14 +271,10 @@ class NCAPTrainer(SwimmerTrainer):
         """Train using improved stability measures with a proven approach."""
         from datetime import datetime
         start_ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        print(f"[{start_ts}] ▶ Starting improved NCAP training with enhanced stability measures")
-        
-        # Set up Tonic logger
-        log_dir = os.path.join(
-            'outputs', 'training_logs', 
-            f'improved_ncap_{self.algorithm}_{self.n_links}links'
-        )
-        tonic.logger.initialize(path=log_dir)
+        print(f"[{start_ts}] ▶ Starting base NCAP training with enhanced stability measures")
+
+        # Set up Tonic logger in the run-local artifact directory.
+        tonic.logger.initialize(path=self.tonic_log_dir)
         
         # Create environment
         env = self.create_tonic_environment()
@@ -299,7 +297,7 @@ class NCAPTrainer(SwimmerTrainer):
         self._run_interval_training(agent, env, tonic_model)
         
         # Save final model
-        self.save_tonic_model(agent, f"improved_ncap_{self.n_links}links")
+        self.save_tonic_model(agent, f"base_ncap_{self.n_links}links")
         
         # Store for evaluation
         self.agent = agent
@@ -312,12 +310,12 @@ class NCAPTrainer(SwimmerTrainer):
         # Plot interval reward progression
         from ..utils.visualization import plot_training_interval_rewards
         from ..utils.visualization import plot_reward_vs_viscosity
-        interval_plot = os.path.join('outputs','training_logs',f'interval_rewards_{self.n_links}links.png')
+        interval_plot = os.path.join(self.training_log_dir, f'interval_rewards_{self.n_links}links.png')
         plot_training_interval_rewards(self.training_metrics['interval_rewards'], interval_plot)
         print(f"Interval reward plot saved to {interval_plot}")
 
         # Scatter reward vs viscosity
-        scatter_path = os.path.join('outputs','training_logs',f'reward_vs_viscosity_{self.n_links}links.png')
+        scatter_path = os.path.join(self.training_log_dir, f'reward_vs_viscosity_{self.n_links}links.png')
         plot_reward_vs_viscosity(self.training_metrics['viscosities'], self.training_metrics['visc_rewards'], scatter_path)
         print(f"Reward-vs-viscosity plot saved to {scatter_path}")
 
@@ -327,7 +325,7 @@ class NCAPTrainer(SwimmerTrainer):
         print(f"Distance travelled post-training: {eval_results['total_distance']:.3f} m")
         
         end_ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        print(f"[{end_ts}] ✔ Improved NCAP training completed and evaluated!")
+        print(f"[{end_ts}] ✔ Base NCAP training completed and evaluated!")
     
     def _run_interval_training(self, agent, env, model):
         """Run training in intervals with stability checks and early stopping."""
@@ -535,11 +533,7 @@ class NCAPTrainer(SwimmerTrainer):
         print("This uses all stability fixes but focuses on basic forward movement")
         
         # Set up Tonic logger
-        log_dir = os.path.join(
-            'outputs', 'training_logs', 
-            f'simple_ncap_{self.algorithm}_{self.n_links}links'
-        )
-        tonic.logger.initialize(path=log_dir)
+        tonic.logger.initialize(path=os.path.join(self.tonic_log_dir, "simple_swimming"))
         
         # Create SIMPLE environment instead of mixed
         env = self.create_simple_tonic_environment()

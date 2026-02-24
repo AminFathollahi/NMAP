@@ -435,15 +435,8 @@ def add_zone_indicators_with_trail(frame, env, step_count, position_history, sho
 
 def create_trajectory_analysis(agent, env, save_path, num_steps=500, phase_name="", trajectory_multiplier=1.0):
     """Create detailed trajectory analysis similar to trained_model_analysis style."""
-    
-    # Create organized output directory
-    plots_dir = os.path.join("outputs", "curriculum_training", "plots")
-    os.makedirs(plots_dir, exist_ok=True)
-    
-    # Update save path to use organized structure
-    if not save_path.startswith("outputs/curriculum_training/"):
-        filename = os.path.basename(save_path)
-        save_path = os.path.join(plots_dir, filename)
+    output_dir = os.path.dirname(save_path) or "."
+    os.makedirs(output_dir, exist_ok=True)
     
     # Apply trajectory multiplier from configuration
     actual_steps = int(num_steps * trajectory_multiplier)
@@ -707,15 +700,8 @@ def create_trajectory_analysis(agent, env, save_path, num_steps=500, phase_name=
 
 def create_curriculum_plots(phase_rewards, phase_distances, eval_results, save_path):
     """Create comprehensive plots for curriculum training progress."""
-    
-    # Create organized output directory
-    plots_dir = os.path.join("outputs", "curriculum_training", "plots")
-    os.makedirs(plots_dir, exist_ok=True)
-    
-    # Update save path to use organized structure
-    if not save_path.startswith("outputs/curriculum_training/"):
-        filename = os.path.basename(save_path)
-        save_path = os.path.join(plots_dir, filename)
+    output_dir = os.path.dirname(save_path) or "."
+    os.makedirs(output_dir, exist_ok=True)
     
     fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 12))
     
@@ -1195,15 +1181,8 @@ def add_enhanced_zone_disks(frame, env, step_count, minimap=True):
 
 def create_test_video(agent, env, save_path, num_steps=300, episode_name="Test Episode", show_minimap=True):
     """Create a video of the agent performing in the environment with zone indicators."""
-    
-    # Create organized output directory
-    videos_dir = os.path.join("outputs", "curriculum_training", "videos")
-    os.makedirs(videos_dir, exist_ok=True)
-    
-    # Update save path to use organized structure
-    if not save_path.startswith("outputs/curriculum_training/"):
-        filename = os.path.basename(save_path)
-        save_path = os.path.join(videos_dir, filename)
+    output_dir = os.path.dirname(save_path) or "."
+    os.makedirs(output_dir, exist_ok=True)
     
     print(f"🎬 Creating test video: {episode_name}")
     
@@ -1267,15 +1246,8 @@ def create_test_video(agent, env, save_path, num_steps=300, episode_name="Test E
 
 def create_phase_comparison_video(agent, env, save_path, phases_to_test=None, phase_video_steps=None):
     """Create a video showing performance across different phases."""
-    
-    # Create organized output directory
-    videos_dir = os.path.join("outputs", "curriculum_training", "videos")
-    os.makedirs(videos_dir, exist_ok=True)
-    
-    # Update save path to use organized structure
-    if not save_path.startswith("outputs/curriculum_training/"):
-        filename = os.path.basename(save_path)
-        save_path = os.path.join(videos_dir, filename)
+    output_dir = os.path.dirname(save_path) or "."
+    os.makedirs(output_dir, exist_ok=True)
     
     if phases_to_test is None:
         phases_to_test = [0, 1, 2, 3]  # All phases
@@ -1382,15 +1354,8 @@ def create_phase_comparison_video(agent, env, save_path, phases_to_test=None, ph
 
 def save_training_summary(eval_results, training_history, save_path):
     """Save a text summary of training results."""
-    
-    # Create organized output directory
-    summaries_dir = os.path.join("outputs", "curriculum_training", "summaries")
-    os.makedirs(summaries_dir, exist_ok=True)
-    
-    # Update save path to use organized structure
-    if not save_path.startswith("outputs/curriculum_training/"):
-        filename = os.path.basename(save_path)
-        save_path = os.path.join(summaries_dir, filename)
+    output_dir = os.path.dirname(save_path) or "."
+    os.makedirs(output_dir, exist_ok=True)
     
     phase_names = ["Pure Swimming", "Single Land Zone", "Two Land Zones", "Full Complexity"]
     

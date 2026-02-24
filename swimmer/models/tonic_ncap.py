@@ -13,7 +13,7 @@ import torch.nn as nn
 from .ncap_swimmer import NCAPSwimmer
 
 try:
-    from NMAP_amin.ncap_priors.swimmer_priors import generate_ncap_segment_priors
+    from NMAP.connectome_priors.swimmer_priors import generate_ncap_segment_priors
 except Exception:
     generate_ncap_segment_priors = None
 
@@ -138,7 +138,7 @@ class TonicNCAPModel(nn.Module):
     def _load_sparse_priors(self, num_segments: int) -> None:
         if generate_ncap_segment_priors is None:
             self.sparse_prior_scalars = self._default_sparse_priors()
-            self.sparse_prior_metadata = {"status": "unavailable", "reason": "ncap_priors import failed"}
+            self.sparse_prior_metadata = {"status": "unavailable", "reason": "connectome_priors import failed"}
             return
 
         try:

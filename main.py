@@ -2,7 +2,7 @@
 """Main entry point for NMAP training and evaluation."""
 
 try:
-    import NMAP_amin.gym_bridge  # noqa: F401
+    import NMAP.gym_bridge  # noqa: F401
 except ModuleNotFoundError:
     import gym_bridge  # noqa: F401
 
@@ -25,7 +25,7 @@ def _bootstrap_paths():
 
 def _load_trainers():
     _bootstrap_paths()
-    from NMAP_amin.swimmer.training import NCAPTrainer, CurriculumNCAPTrainer
+    from NMAP.swimmer.training import NCAPTrainer, CurriculumNCAPTrainer
     return NCAPTrainer, CurriculumNCAPTrainer
 
 
@@ -40,6 +40,12 @@ def build_parser():
     parser.add_argument('--algorithm', choices=['ppo', 'a2c'], default='ppo', help='RL algorithm to use for training/evaluation.')
     parser.add_argument('--n_links', type=int, default=6, help='Number of links in the swimmer.')
     parser.add_argument('--training_steps', type=int, default=100000, help='Number of training steps.')
+    parser.add_argument(
+        '--log_dir',
+        type=str,
+        default='results/manual_run',
+        help='Root directory for training logs, checkpoints, and evaluation artifacts.',
+    )
     parser.add_argument('--save_steps', type=int, default=20000, help='Checkpoint/save interval in steps.')
     parser.add_argument('--log_episodes', type=int, default=5, help='Episode logging interval.')
     parser.add_argument('--load_model', type=str, default=None, help='Path to a trained tonic model for evaluation.')
@@ -89,6 +95,7 @@ def run_train(args):
         training_steps=args.training_steps,
         save_steps=args.save_steps,
         log_episodes=args.log_episodes,
+        log_dir=args.log_dir,
         sparse_init=args.sparse_init,
         sparse_reg_lambda=args.sparse_reg_lambda,
         force_oscillation=args.force_oscillation,
@@ -104,6 +111,7 @@ def run_train_curriculum(args):
         training_steps=args.training_steps,
         save_steps=args.save_steps,
         log_episodes=args.log_episodes,
+        log_dir=args.log_dir,
         resume_from_checkpoint=args.resume_checkpoint,
         model_type=args.model_type,
         algorithm=args.algorithm,
@@ -123,6 +131,7 @@ def run_evaluate(args):
     trainer = ncap_trainer_cls(
         n_links=args.n_links,
         algorithm=args.algorithm,
+        log_dir=args.log_dir,
         sparse_init=args.sparse_init,
         sparse_reg_lambda=args.sparse_reg_lambda,
         force_oscillation=args.force_oscillation,
@@ -139,6 +148,7 @@ def run_evaluate_curriculum(args):
     trainer = curriculum_trainer_cls(
         n_links=args.n_links,
         training_steps=0,
+        log_dir=args.log_dir,
         resume_from_checkpoint=args.resume_checkpoint,
         model_type=args.model_type,
         algorithm=args.algorithm,

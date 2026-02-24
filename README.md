@@ -20,7 +20,7 @@ Core biological constraints implemented in this repository:
 ## 📦 Repository Layout
 
 ```
-NMAP_amin/
+NMAP/
 ├── main.py                          # Training/evaluation entrypoint
 ├── swimmer/
 │   ├── environments/
@@ -36,7 +36,7 @@ NMAP_amin/
 │       ├── curriculum_trainer.py    # 4-phase curriculum trainer
 │       ├── ncap_trainer.py          # Interval-training NCAP trainer
 │       └── swimmer_trainer.py       # Base Tonic trainer
-├── ncap_priors/
+├── connectome_priors/
 │   ├── swimmer_priors.py            # Cook 2019 → sparse pathway priors
 │   ├── c_elegans_connectome.py      # Connectome edge loading
 │   └── c_elegans_geometry.py        # c302 NML geometry parsing
@@ -68,10 +68,10 @@ Each experiment runs for 500,000 training steps and its Tonic outputs are moved 
 ### Manual invocation
 
 ```bash
-python NMAP_amin/main.py --mode train --training_steps 500000
-python NMAP_amin/main.py --mode train --training_steps 500000 --force_oscillation
-python NMAP_amin/main.py --mode train --training_steps 500000 --force_oscillation --sparse_init
-python NMAP_amin/main.py --mode train --training_steps 500000 --force_oscillation --sparse_init --sparse_reg_lambda 0.05
+python NMAP/main.py --mode train --training_steps 500000
+python NMAP/main.py --mode train --training_steps 500000 --force_oscillation
+python NMAP/main.py --mode train --training_steps 500000 --force_oscillation --sparse_init
+python NMAP/main.py --mode train --training_steps 500000 --force_oscillation --sparse_init --sparse_reg_lambda 0.05
 ```
 
 ---
@@ -96,7 +96,7 @@ A zero-trust pre-launch audit was performed before the 12-hour automated ablatio
 
 | Check | File | Finding |
 |-------|------|---------|
-| Cook 2019 XLSX absolute path | `ncap_priors/swimmer_priors.py` | `_resolve_connectome_artifact` now prioritizes `/home/amin/Research/NCAP/external/ConnectomeToolbox/cect/data/…` with legacy fallbacks; file confirmed present on disk. |
+| Cook 2019 XLSX absolute path | `connectome_priors/swimmer_priors.py` | `_resolve_connectome_artifact` now prioritizes `/home/amin/Research/NCAP/external/ConnectomeToolbox/cect/data/…` with legacy fallbacks; file confirmed present on disk. |
 | PYTHONPATH absolute paths | `run_experiments.py` | All three PYTHONPATH components built from `Path(__file__).resolve()` and `Path.cwd().resolve()` — fully absolute at runtime. |
 | `results/` archive path | `run_experiments.py` | `RESULTS_ROOT = ROOT / "results"` where `ROOT = Path(__file__).resolve().parent` — absolute. |
 | Anti-reward-hack spawn jitter | `swimmer_trainer.py:456` | `_reset_with_randomized_start` enforces minimum 0.2 m displacement from default spawn and rejects positions within 0.5 m of the target geom; 24-attempt loop guarantees a valid sample. |
@@ -128,22 +128,21 @@ For reproducible comparisons, report at minimum:
 
 ---
 
-## ❓ Questions Answered
+##❓ Scientific & Architectural Questions Answered
+Q: Why implement strict excitatory/inhibitory weight clamps instead of letting the network learn them?
+A: To preserve the biological fidelity of the C. elegans motor circuit. Previous abstractions lazily mapped 'ventral' neurons to inhibitory, paralyzing the simulated ventral circuit. By enforcing strictly inhibitory bounds on contra-pathways (D-neurons) and excitatory bounds on ipsi/proprioceptive inputs and gap junctions, we force the RL optimizer to explore mathematically valid biological states rather than unphysical mathematical shortcuts.
 
-**Q: Does the Cook 2019 XLSX resolve correctly on machines where the relative path might differ?**
-A: Yes. `_resolve_connectome_artifact` now tries `/home/amin/Research/NCAP/external/ConnectomeToolbox/…` first, then workspace-relative fallbacks (including legacy locations). If none exist it returns the primary external path and `FileNotFoundError` surfaces at parse time with a clear message.
+Q: Why does our agent often 'curl up and shiver' instead of swimming?
+A: In high-impedance environments (like viscous water), an unconstrained RL agent often falls into a local optimum: it discovers that locking its joints and shivering minimizes torque penalties while preventing backward drift. It learns to 'survive' rather than swim. We counter this policy collapse by injecting a variance penalty (--force_oscillation) and shaping the reward to penalize static, extreme postures.
 
-**Q: Can the ablation runner produce mixed results if PYTHONPATH is set incorrectly?**
-A: No. `run_experiments.py` forces `os.chdir(ROOT)` before any subprocess and rebuilds PYTHONPATH entirely from resolved absolute paths, overriding any inherited environment. Each experiment starts clean via `_clear_staging_outputs()`.
+Q: Should biologically constrained networks use PPO or A2C optimization?
+A: PPO is the industry standard for continuous control due to trust-region clipping, which ensures stability. However, when weights are strictly clamped to biological bounds (positive/negative), PPO's clipping can get 'stuck' against these hard boundaries. A2C applies raw gradients, which is normally unstable, but our biological priors (sparse topology, D-neuron conductance math) act as natural structural stabilizers, making A2C a highly relevant alternative for biological architectures.
 
-**Q: Does `--force_oscillation` actually penalize the actor or just log a metric?**
-A: It penalizes. The penalty is added to `auxiliary_actor_loss` and applied via `_apply_actor_auxiliary_step`, which runs a separate `zero_grad → backward → clip → step` cycle on the actor optimizer. The penalty, action variance, and whether the auxiliary step fired are all logged to Tonic logger under `actor/`.
+Q: How does target distance impact the emergence of coordinated gait?
+A: If navigation targets are too large or too close (e.g., 1.0m radius), the agent can 'accidentally' fall into the reward zone without propagating a wave, triggering early stopping before locomotion is learned. By shrinking targets to 0.2m and pushing them to 3.0m, we maximize the environmental gradient, mathematically forcing the agent to learn true sinusoidal wave propagation to achieve the reward.
 
-**Q: Does the land zone curriculum actually reach 0.2 m, or does it converge too slowly for a 500k-step run?**
-A: It now reaches 0.2 m at episode 40. At ~750 timesteps per episode (time_limit=3000, n_sub_steps=4), episode 40 is crossed well inside the first 30,000 steps of any experiment.
-
-**Q: Will early stopping fire prematurely during the 12-hour run?**
-A: No, after fixing patience to 30. With `interval_size = min(2000, training_steps // 2) = 2000` and 500k steps, there are 250 intervals; early stopping requires 30 consecutive non-improving intervals (~60k stagnant steps) before halting.
+Q: How does the framework handle legacy RL environments built on deprecated libraries?
+A: Instead of rewriting hundreds of legacy environment files, NMAP implements a 'Global Compatibility Bridge' (sys.modules['gym'] = gymnasium). This intercepts legacy API calls and dynamically routes them to the modern software stack, preventing software rot while preserving the integrity of the original research environments.
 
 ---
 

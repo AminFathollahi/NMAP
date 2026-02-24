@@ -45,8 +45,8 @@ Their key contributions were:
 ```
 NCAP/ (Archive root)
 ├── external/          <- PDFs, docx, ConnectomeToolbox, CElegansNeuroML
-└── NMAP_amin/         <- GitHub repo root
-    ├── ncap_priors/
+└── NMAP/         <- GitHub repo root
+    ├── connectome_priors/
     ├── swimmer/
     │   ├── environments/
     │   ├── models/
@@ -65,9 +65,9 @@ NCAP/ (Archive root)
 Every entry point script must import gym_bridge BEFORE any other package:
 ```python
 try:
-    import NMAP_amin.gym_bridge  # noqa: F401  (when run from NCAP/)
+    import NMAP.gym_bridge  # noqa: F401  (when run from NCAP/)
 except ModuleNotFoundError:
-    import gym_bridge             # noqa: F401  (when run from inside NMAP_amin/)
+    import gym_bridge             # noqa: F401  (when run from inside NMAP/)
 ```
 This patches the gym namespace so tonic and our environments see a consistent API.
 

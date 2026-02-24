@@ -23,7 +23,7 @@ class AdvancedTrainingLogger(TrainingLogger):
     Includes hardware tracking, ETA estimation, and training health analysis.
     """
     
-    def __init__(self, log_dir='outputs/training_logs', experiment_name=None):
+    def __init__(self, log_dir='results/training_logs', experiment_name=None):
         super().__init__(log_dir, experiment_name)
         
         # Hardware and system monitoring
