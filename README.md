@@ -1,6 +1,6 @@
 # NMAP (Neuro-Modulating Architecture Priors)
 
-NMAP is a biologically grounded embodied-control framework that bridges the gap between static **Neural Circuit Architectural Priors (NCAP)** and dynamic locomotion learning. The project integrates sub-millimeter *C. elegans* connectome structure (Cook 2019) directly into policy initialization and regularization, then evaluates how those priors interact with reinforcement learning in mixed-environment swimming and crawling tasks.
+NMAP is a biologically grounded embodied-control framework that bridges the gap between static **Neural Circuit Architectural Priors (NCAP)** and dynamic locomotion learning. The project integrates sub-millimeter *C. elegans* connectome structure (Cook 2019) directly into policy initialization and regularization, then evaluates how those priors interact with reinforcement learning in mixed-environment swimming and crawling tasks. Further steps would include adding neuromodulation, HRL framework, and using bioplausible backprop alternatives.
 
 ---
 
@@ -58,7 +58,7 @@ This sequentially runs and archives four experiments to `results/`:
 
 | Step | Name | Flags |
 |------|------|-------|
-| 01 | Baseline (tabula rasa) | — |
+| 01 | Baseline (canonical NCAP model) | — |
 | 02 | Oscillation preservation | `--force_oscillation` |
 | 03 | Sparse initialization | `--force_oscillation --sparse_init` |
 | 04 | Full NMAP | `--force_oscillation --sparse_init --sparse_reg_lambda 0.05` |
